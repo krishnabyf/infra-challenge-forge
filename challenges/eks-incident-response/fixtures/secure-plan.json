@@ -1,0 +1,36 @@
+{
+  "format_version": "1.2",
+  "planned_values": {
+    "root_module": {
+      "resources": [
+        {"type": "aws_vpc", "values": {"enable_dns_support": true, "enable_dns_hostnames": true}},
+        {"type": "aws_subnet", "values": {"availability_zone": "us-east-1a", "map_public_ip_on_launch": false, "tags": {"Tier": "private"}}},
+        {"type": "aws_subnet", "values": {"availability_zone": "us-east-1b", "map_public_ip_on_launch": false, "tags": {"Tier": "private"}}},
+        {"type": "aws_subnet", "values": {"availability_zone": "us-east-1c", "map_public_ip_on_launch": false, "tags": {"Tier": "private"}}},
+        {"type": "aws_subnet", "values": {"availability_zone": "us-east-1a", "map_public_ip_on_launch": true, "tags": {"Tier": "public"}}},
+        {"type": "aws_subnet", "values": {"availability_zone": "us-east-1b", "map_public_ip_on_launch": true, "tags": {"Tier": "public"}}},
+        {"type": "aws_subnet", "values": {"availability_zone": "us-east-1c", "map_public_ip_on_launch": true, "tags": {"Tier": "public"}}},
+        {"type": "aws_nat_gateway", "values": {"subnet_id": "subnet-public-a"}},
+        {"type": "aws_nat_gateway", "values": {"subnet_id": "subnet-public-b"}},
+        {"type": "aws_nat_gateway", "values": {"subnet_id": "subnet-public-c"}},
+        {"type": "aws_security_group", "values": {"name": "eks-control-plane", "ingress": [{"from_port": 443, "to_port": 443, "cidr_blocks": ["10.40.0.0/16"]}]}},
+        {
+          "type": "aws_eks_cluster",
+          "values": {
+            "enabled_cluster_log_types": ["api", "audit", "authenticator", "controllerManager", "scheduler"],
+            "vpc_config": [{"endpoint_private_access": true, "endpoint_public_access": false, "public_access_cidrs": []}],
+            "encryption_config": [{"resources": ["secrets"], "provider": [{"key_arn": "arn:aws:kms:us-east-1:111122223333:key/example"}]}]
+          }
+        },
+        {
+          "type": "aws_iam_policy",
+          "values": {
+            "name": "payments-runtime",
+            "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"dynamodb:GetItem\",\"dynamodb:PutItem\",\"kms:Decrypt\"],\"Resource\":[\"arn:aws:dynamodb:us-east-1:111122223333:table/payments\",\"arn:aws:kms:us-east-1:111122223333:key/example\"]}]}"
+          }
+        }
+      ]
+    }
+  }
+}
+

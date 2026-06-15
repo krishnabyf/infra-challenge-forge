@@ -1,0 +1,30 @@
+{
+  "format_version": "1.2",
+  "planned_values": {
+    "root_module": {
+      "resources": [
+        {"type": "aws_vpc", "values": {"enable_dns_support": true, "enable_dns_hostnames": false}},
+        {"type": "aws_subnet", "values": {"availability_zone": "us-east-1a", "map_public_ip_on_launch": true, "tags": {"Tier": "private"}}},
+        {"type": "aws_subnet", "values": {"availability_zone": "us-east-1b", "map_public_ip_on_launch": true, "tags": {"Tier": "private"}}},
+        {"type": "aws_nat_gateway", "values": {"subnet_id": "subnet-public-a"}},
+        {"type": "aws_security_group", "values": {"name": "eks-control-plane", "ingress": [{"from_port": 0, "to_port": 65535, "cidr_blocks": ["0.0.0.0/0"]}]}},
+        {
+          "type": "aws_eks_cluster",
+          "values": {
+            "enabled_cluster_log_types": ["api"],
+            "vpc_config": [{"endpoint_private_access": false, "endpoint_public_access": true, "public_access_cidrs": ["0.0.0.0/0"]}],
+            "encryption_config": []
+          }
+        },
+        {
+          "type": "aws_iam_policy",
+          "values": {
+            "name": "payments-runtime",
+            "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"*\",\"Resource\":\"*\"}]}"
+          }
+        }
+      ]
+    }
+  }
+}
+

@@ -1,0 +1,60 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  evaluator:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: ruff check src tests
+      - run: pytest
+      - name: Prove fail-closed behavior and reference score
+        run: |
+          set +e
+          infra-forge evaluate challenges/eks-incident-response/challenge.yaml \
+            --plan challenges/eks-incident-response/fixtures/insecure-plan.json \
+            --manifests challenges/eks-incident-response/starter/kubernetes
+          result=$?
+          set -e
+          test "$result" -eq 2
+          infra-forge evaluate challenges/eks-incident-response/challenge.yaml \
+            --plan challenges/eks-incident-response/fixtures/secure-plan.json \
+            --manifests challenges/eks-incident-response/reference/kubernetes
+
+  infrastructure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+      - name: Check Terraform formatting
+        run: terraform fmt -check -recursive challenges
+      - name: Parse Kubernetes resources client-side
+        run: |
+          kubectl create --dry-run=client --validate=false \
+            -f challenges/eks-incident-response/reference/kubernetes/workload.yaml
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: infra-challenge-forge:ci
+

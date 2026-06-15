@@ -1,0 +1,67 @@
+id: eks-incident-response-v1
+title: Recover a compromised multi-tenant EKS platform
+passing_score: 80
+rules:
+  - id: NET-001
+    title: VPC service discovery is functional
+    category: networking
+    check: vpc_dns
+    weight: 5
+  - id: NET-002
+    title: Workload subnets do not assign public IPs
+    category: networking
+    check: private_subnets
+    weight: 10
+  - id: NET-003
+    title: Security groups avoid unrestricted administrative ingress
+    category: networking
+    check: restricted_ingress
+    weight: 10
+  - id: EKS-001
+    title: Kubernetes API is private-only
+    category: security
+    check: private_cluster_endpoint
+    weight: 10
+  - id: EKS-002
+    title: Kubernetes API has no world-routable CIDR
+    category: security
+    check: no_public_cidrs
+    weight: 5
+  - id: EKS-003
+    title: Control-plane audit signals are complete
+    category: observability
+    check: control_plane_logs
+    weight: 10
+    params:
+      required: [api, audit, authenticator, controllerManager, scheduler]
+  - id: DATA-001
+    title: Kubernetes secrets use customer-managed KMS encryption
+    category: data-protection
+    check: secrets_encryption
+    weight: 10
+  - id: IAM-001
+    title: Application IAM policy is least privilege
+    category: identity
+    check: least_privilege_iam
+    weight: 15
+  - id: REL-001
+    title: Private egress has an AZ-local NAT failure domain
+    category: reliability
+    check: nat_per_az
+    weight: 5
+  - id: K8S-001
+    title: Workloads use a hardened security context
+    category: workload-security
+    check: workload_security
+    weight: 10
+  - id: K8S-002
+    title: Workloads tolerate routine disruption
+    category: reliability
+    check: workload_resilience
+    weight: 5
+  - id: K8S-003
+    title: Namespace traffic starts from default deny
+    category: zero-trust
+    check: network_policy
+    weight: 5
+
