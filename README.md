@@ -6,10 +6,9 @@ Infrastructure Challenge Forge is an executable evaluation system for senior
 DevOps, SRE, platform engineering, and AI infrastructure reasoning tasks. It
 scores the resulting infrastructure, not superficial HCL patterns.
 
-The included challenge starts from a real incident shape: a compromised pod,
-wildcard AWS permissions, an internet-reachable EKS API, incomplete audit
-signals, public workload placement, and weak Kubernetes isolation. The candidate
-must recover the platform while preserving service availability.
+The included challenges start from real incident shapes: a compromised EKS
+workload and a failed multi-account production release backed by long-lived AWS
+keys, shared administrator access, unsafe Terraform state, and no rollback.
 
 ## What this proves
 
@@ -18,6 +17,7 @@ must recover the platform while preserving service availability.
 - Kubernetes security, zero-trust networking, and disruption resilience
 - Fail-closed CI that proves the bad solution fails and the reference passes
 - Safe evaluator design that does not execute candidate-controlled hooks
+- Multi-account GitHub OIDC, permissions boundaries, state locking, and rollback
 - Clear challenge-authoring, architecture, and threat-model documentation
 
 ## Run it
@@ -51,7 +51,9 @@ infra-forge evaluate \
 The CLI returns exit code `0` for a passing submission, `2` for a scored failure,
 and a non-scoring error for invalid configuration.
 
-## First challenge
+## Challenge catalog
+
+### 1. EKS incident response
 
 | Category | Examples | Weight |
 | --- | --- | ---: |
@@ -65,6 +67,21 @@ Read the candidate brief in
 [`challenges/eks-incident-response/prompt.md`](challenges/eks-incident-response/prompt.md)
 and the evaluator rationale in [`docs/architecture.md`](docs/architecture.md).
 
+### 2. Multi-account CI/CD recovery
+
+| Category | Examples | Weight |
+| --- | --- | ---: |
+| Federated identity | GitHub OIDC trust, no static AWS keys | 25 |
+| IAM blast radius | Boundaries, scoped policy, isolated account roles | 25 |
+| Terraform state | S3 recovery controls, KMS, DynamoDB locking | 25 |
+| Pipeline safety | Minimal permissions, account binding, gates | 15 |
+| Release recovery | Immutable digest promotion, rollback validation | 10 |
+
+Start with the exact work checklist in
+[`challenges/multi-account-cicd-recovery/WORK.md`](challenges/multi-account-cicd-recovery/WORK.md).
+The candidate incident brief is in
+[`challenges/multi-account-cicd-recovery/prompt.md`](challenges/multi-account-cicd-recovery/prompt.md).
+
 ## Repository map
 
 ```text
@@ -75,6 +92,10 @@ challenges/
     reference/                  remediated Terraform and Kubernetes solution
     fixtures/                   deterministic Terraform plan regression data
     challenge.yaml              machine-readable weighted rubric
+  multi-account-cicd-recovery/
+    starter/                    static-key, shared-role, no-rollback baseline
+    reference/                  OIDC, bounded IAM, locked state, safe promotion
+    WORK.md                     exact candidate tasks and verification commands
 docs/                           architecture, authoring guide, threat model
 tests/                          evaluator regression tests
 ```
@@ -91,4 +112,3 @@ separate.
 ## License
 
 MIT
-

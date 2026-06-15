@@ -10,4 +10,4 @@ build/
 *.tfstate
 *.tfstate.*
 report.json
-
+cicd-report.json

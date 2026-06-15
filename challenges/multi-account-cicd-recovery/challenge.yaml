@@ -1,0 +1,75 @@
+id: multi-account-cicd-recovery-v1
+title: Recover an insecure multi-account AWS deployment pipeline
+passing_score: 80
+rules:
+  - id: OIDC-001
+    title: GitHub trust is federated and restricted by repository environment
+    category: identity
+    check: github_oidc_trust
+    weight: 15
+    params:
+      repository: krishnabyf/infra-challenge-forge
+      environments: [staging, production]
+  - id: OIDC-002
+    title: No long-lived AWS credentials remain
+    category: identity
+    check: no_static_aws_keys
+    weight: 10
+  - id: IAM-101
+    title: Every deployment role has a permissions boundary
+    category: identity
+    check: deployment_permissions_boundaries
+    weight: 10
+    params:
+      accounts: [staging, production]
+  - id: IAM-102
+    title: Deployment policies avoid wildcard action and resource grants
+    category: identity
+    check: deployment_policy_scope
+    weight: 10
+    params:
+      allowed_wildcard_resource_actions:
+        - ecr:GetAuthorizationToken
+        - ecs:RegisterTaskDefinition
+  - id: IAM-103
+    title: Staging and production use isolated short-lived roles
+    category: blast-radius
+    check: isolated_deployment_roles
+    weight: 5
+    params:
+      accounts: [staging, production]
+  - id: STATE-001
+    title: Terraform state is versioned, encrypted, private, and recoverable
+    category: state-management
+    check: hardened_state_backend
+    weight: 15
+  - id: STATE-002
+    title: Terraform operations use a durable state lock
+    category: state-management
+    check: state_locking
+    weight: 10
+  - id: PIPE-001
+    title: Workflow requests only OIDC and read permissions
+    category: pipeline-security
+    check: workflow_oidc_permissions
+    weight: 5
+  - id: PIPE-002
+    title: Deployment jobs bind to separate accounts and environments
+    category: pipeline-security
+    check: workflow_account_separation
+    weight: 5
+  - id: PIPE-003
+    title: Production requires plan, staging success, environment gate, and concurrency
+    category: change-safety
+    check: workflow_production_gate
+    weight: 5
+  - id: PIPE-004
+    title: The same immutable artifact is promoted between accounts
+    category: supply-chain
+    check: workflow_immutable_release
+    weight: 5
+  - id: PIPE-005
+    title: Failed production health verification triggers revision rollback
+    category: recovery
+    check: workflow_rollback_validation
+    weight: 5

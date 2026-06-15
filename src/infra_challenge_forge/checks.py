@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import ipaddress
+import json
+import re
 from pathlib import Path
 from typing import Any, Callable
 
@@ -173,6 +175,330 @@ def network_policy(
     return default_deny, f"{len(policies)} NetworkPolicy object(s); default deny ingress+egress required"
 
 
+def _json_document(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _statements(document: dict[str, Any]) -> list[dict[str, Any]]:
+    statements = document.get("Statement", [])
+    if isinstance(statements, dict):
+        return [statements]
+    return [item for item in statements if isinstance(item, dict)]
+
+
+def github_oidc_trust(
+    plan: dict[str, Any], _: list[dict[str, Any]], params: dict[str, Any]
+) -> tuple[bool, str]:
+    providers = _values(plan, "aws_iam_openid_connect_provider")
+    roles = _values(plan, "aws_iam_role")
+    repository = params.get("repository", "")
+    environments = set(params.get("environments", []))
+    trusted_environments: set[str] = set()
+    audience_restricted = False
+
+    for role in roles:
+        document = _json_document(role.get("assume_role_policy"))
+        for statement in _statements(document):
+            condition = statement.get("Condition", {})
+            values = json.dumps(condition, sort_keys=True)
+            audience_restricted |= (
+                "token.actions.githubusercontent.com:aud" in values
+                and "sts.amazonaws.com" in values
+            )
+            for environment in environments:
+                subject = f"repo:{repository}:environment:{environment}"
+                if subject in values:
+                    trusted_environments.add(environment)
+
+    provider_ok = any(
+        item.get("url") == "https://token.actions.githubusercontent.com"
+        and "sts.amazonaws.com" in (item.get("client_id_list") or [])
+        for item in providers
+    )
+    missing = sorted(environments - trusted_environments)
+    passed = provider_ok and audience_restricted and not missing
+    return passed, (
+        f"OIDC provider: {'present' if provider_ok else 'missing'}; "
+        f"untrusted environments: {missing or 'none'}"
+    )
+
+
+def no_static_aws_keys(
+    plan: dict[str, Any], manifests: list[dict[str, Any]], __: dict[str, Any]
+) -> tuple[bool, str]:
+    access_keys = _values(plan, "aws_iam_access_key")
+    workflow_text = yaml.safe_dump(manifests).lower()
+    key_references = sorted(
+        {
+            name
+            for name in ("aws_access_key_id", "aws_secret_access_key", "aws_session_token")
+            if name in workflow_text
+        }
+    )
+    passed = not access_keys and not key_references
+    return passed, (
+        f"IAM access key resources: {len(access_keys)}; "
+        f"static credential references: {key_references or 'none'}"
+    )
+
+
+def deployment_permissions_boundaries(
+    plan: dict[str, Any], _: list[dict[str, Any]], params: dict[str, Any]
+) -> tuple[bool, str]:
+    required_accounts = set(params.get("accounts", []))
+    roles = [
+        role
+        for role in _values(plan, "aws_iam_role")
+        if role.get("tags", {}).get("Purpose") == "deployment"
+    ]
+    bounded_accounts = {
+        role.get("tags", {}).get("Account")
+        for role in roles
+        if role.get("permissions_boundary")
+    }
+    missing = sorted(required_accounts - bounded_accounts)
+    return bool(roles) and not missing, (
+        f"deployment roles: {len(roles)}; accounts missing boundaries: {missing or 'none'}"
+    )
+
+
+def deployment_policy_scope(
+    plan: dict[str, Any], _: list[dict[str, Any]], params: dict[str, Any]
+) -> tuple[bool, str]:
+    allowed_wildcard_actions = set(params.get("allowed_wildcard_resource_actions", []))
+    policies = [
+        policy
+        for policy in _values(plan, "aws_iam_policy")
+        if policy.get("tags", {}).get("Purpose") == "deployment"
+    ]
+    violations: list[str] = []
+    for policy in policies:
+        document = _json_document(policy.get("policy"))
+        for statement in _statements(document):
+            actions = statement.get("Action", [])
+            resources_value = statement.get("Resource", [])
+            actions = [actions] if isinstance(actions, str) else actions
+            resource_arns = (
+                [resources_value] if isinstance(resources_value, str) else resources_value
+            )
+            wildcard_action = "*" in actions
+            invalid_wildcard_resource = "*" in resource_arns and not set(actions).issubset(
+                allowed_wildcard_actions
+            )
+            if wildcard_action or invalid_wildcard_resource:
+                violations.append(policy.get("name", "unnamed"))
+                break
+    return bool(policies) and not violations, (
+        f"deployment policies with wildcard action/resource: {violations or 'none'}"
+    )
+
+
+def isolated_deployment_roles(
+    plan: dict[str, Any], _: list[dict[str, Any]], params: dict[str, Any]
+) -> tuple[bool, str]:
+    required_accounts = set(params.get("accounts", []))
+    roles = [
+        role
+        for role in _values(plan, "aws_iam_role")
+        if role.get("tags", {}).get("Purpose") == "deployment"
+    ]
+    accounts = {role.get("tags", {}).get("Account") for role in roles}
+    long_sessions = [
+        role.get("name", "unnamed")
+        for role in roles
+        if int(role.get("max_session_duration", 43200)) > 3600
+    ]
+    missing = sorted(required_accounts - accounts)
+    passed = not missing and not long_sessions and len(roles) >= len(required_accounts)
+    return passed, (
+        f"missing account roles: {missing or 'none'}; "
+        f"roles over one-hour sessions: {long_sessions or 'none'}"
+    )
+
+
+def hardened_state_backend(
+    plan: dict[str, Any], _: list[dict[str, Any]], __: dict[str, Any]
+) -> tuple[bool, str]:
+    buckets = [
+        item
+        for item in _values(plan, "aws_s3_bucket")
+        if item.get("tags", {}).get("Purpose") == "terraform-state"
+    ]
+    versions = _values(plan, "aws_s3_bucket_versioning")
+    encryption = _values(plan, "aws_s3_bucket_server_side_encryption_configuration")
+    public_blocks = _values(plan, "aws_s3_bucket_public_access_block")
+    kms_keys = _values(plan, "aws_kms_key")
+
+    versioned = any(
+        item.get("versioning_configuration", [{}])[0].get("status") == "Enabled"
+        for item in versions
+    )
+    kms_encrypted = any(
+        rule.get("apply_server_side_encryption_by_default", [{}])[0].get("sse_algorithm")
+        == "aws:kms"
+        for item in encryption
+        for rule in (item.get("rule") or [])
+    )
+    public_blocked = any(
+        all(
+            item.get(key) is True
+            for key in (
+                "block_public_acls",
+                "block_public_policy",
+                "ignore_public_acls",
+                "restrict_public_buckets",
+            )
+        )
+        for item in public_blocks
+    )
+    key_rotation = any(item.get("enable_key_rotation") is True for item in kms_keys)
+    controls = {
+        "bucket": bool(buckets),
+        "versioning": versioned,
+        "kms": kms_encrypted,
+        "public-block": public_blocked,
+        "key-rotation": key_rotation,
+    }
+    missing = sorted(name for name, enabled in controls.items() if not enabled)
+    return not missing, f"missing state controls: {missing or 'none'}"
+
+
+def state_locking(
+    plan: dict[str, Any], _: list[dict[str, Any]], __: dict[str, Any]
+) -> tuple[bool, str]:
+    tables = _values(plan, "aws_dynamodb_table")
+    valid = [
+        table
+        for table in tables
+        if table.get("hash_key") == "LockID"
+        and table.get("billing_mode") == "PAY_PER_REQUEST"
+        and any(
+            attribute.get("name") == "LockID" and attribute.get("type") == "S"
+            for attribute in (table.get("attribute") or [])
+        )
+        and table.get("point_in_time_recovery", [{}])[0].get("enabled") is True
+    ]
+    return bool(valid), (
+        f"valid LockID tables: {len(valid)}; require on-demand billing and PITR"
+    )
+
+
+def _workflow_jobs(manifests: list[dict[str, Any]]) -> tuple[dict[str, Any], dict[str, Any]]:
+    for document in manifests:
+        jobs = document.get("jobs")
+        if isinstance(jobs, dict):
+            return document, jobs
+    return {}, {}
+
+
+def workflow_oidc_permissions(
+    _: dict[str, Any], manifests: list[dict[str, Any]], __: dict[str, Any]
+) -> tuple[bool, str]:
+    workflow, _ = _workflow_jobs(manifests)
+    permissions = workflow.get("permissions", {})
+    valid = (
+        permissions.get("id-token") == "write"
+        and permissions.get("contents") == "read"
+        and set(permissions) <= {"id-token", "contents"}
+    )
+    return valid, f"workflow permissions: {permissions or 'missing'}"
+
+
+def workflow_account_separation(
+    _: dict[str, Any], manifests: list[dict[str, Any]], __: dict[str, Any]
+) -> tuple[bool, str]:
+    _, jobs = _workflow_jobs(manifests)
+    expected = {"deploy-staging": "staging", "deploy-production": "production"}
+    role_arns: dict[str, str] = {}
+    missing: list[str] = []
+    for job_name, environment in expected.items():
+        job = jobs.get(job_name, {})
+        if job.get("environment") != environment:
+            missing.append(f"{job_name}:environment")
+        text = yaml.safe_dump(job)
+        match = re.search(r"arn:aws:iam::(\d{12}):role/[A-Za-z0-9+=,.@_/-]+", text)
+        if match:
+            role_arns[job_name] = match.group(0)
+        else:
+            missing.append(f"{job_name}:role")
+    distinct = len(set(role_arns.values())) == len(expected)
+    return not missing and distinct, (
+        f"missing deployment bindings: {missing or 'none'}; distinct roles: {distinct}"
+    )
+
+
+def workflow_production_gate(
+    _: dict[str, Any], manifests: list[dict[str, Any]], __: dict[str, Any]
+) -> tuple[bool, str]:
+    workflow, jobs = _workflow_jobs(manifests)
+    production = jobs.get("deploy-production", {})
+    needs = production.get("needs", [])
+    needs = [needs] if isinstance(needs, str) else needs
+    concurrency = workflow.get("concurrency") or production.get("concurrency")
+    gated = (
+        production.get("environment") == "production"
+        and "plan-production" in needs
+        and "deploy-staging" in needs
+        and bool(concurrency)
+    )
+    return gated, (
+        f"production needs: {needs or 'none'}; "
+        f"environment: {production.get('environment', 'missing')}; "
+        f"concurrency: {'set' if concurrency else 'missing'}"
+    )
+
+
+def workflow_immutable_release(
+    _: dict[str, Any], manifests: list[dict[str, Any]], __: dict[str, Any]
+) -> tuple[bool, str]:
+    _, jobs = _workflow_jobs(manifests)
+    build = yaml.safe_dump(jobs.get("build", {}))
+    deployments = yaml.safe_dump(
+        {
+            name: jobs.get(name, {})
+            for name in ("deploy-staging", "deploy-production")
+        }
+    )
+    produces_digest = "digest" in build and "outputs" in build
+    consumes_digest = "needs.build.outputs.digest" in deployments
+    mutable_latest = ":latest" in deployments
+    return produces_digest and consumes_digest and not mutable_latest, (
+        f"build digest output: {produces_digest}; deployments consume digest: "
+        f"{consumes_digest}; mutable latest tag: {mutable_latest}"
+    )
+
+
+def workflow_rollback_validation(
+    _: dict[str, Any], manifests: list[dict[str, Any]], __: dict[str, Any]
+) -> tuple[bool, str]:
+    _, jobs = _workflow_jobs(manifests)
+    verify = jobs.get("verify-production", {})
+    rollback = jobs.get("rollback-production", {})
+    verify_text = yaml.safe_dump(verify).lower()
+    rollback_text = yaml.safe_dump(rollback).lower()
+    rollback_needs = rollback.get("needs", [])
+    rollback_needs = [rollback_needs] if isinstance(rollback_needs, str) else rollback_needs
+    health_check = "/health" in verify_text or "/ready" in verify_text
+    failure_only = "failure()" in str(rollback.get("if", ""))
+    restores_previous = "previous" in rollback_text and (
+        "task-definition" in rollback_text or "rollback" in rollback_text
+    )
+    linked = "verify-production" in rollback_needs
+    passed = health_check and failure_only and restores_previous and linked
+    return passed, (
+        f"health verification: {health_check}; failure-only rollback: {failure_only}; "
+        f"previous revision restore: {restores_previous}; linked to verification: {linked}"
+    )
+
+
 CHECKS: dict[str, Check] = {
     "vpc_dns": vpc_dns,
     "private_subnets": private_subnets,
@@ -186,6 +512,18 @@ CHECKS: dict[str, Check] = {
     "workload_security": workload_security,
     "workload_resilience": workload_resilience,
     "network_policy": network_policy,
+    "github_oidc_trust": github_oidc_trust,
+    "no_static_aws_keys": no_static_aws_keys,
+    "deployment_permissions_boundaries": deployment_permissions_boundaries,
+    "deployment_policy_scope": deployment_policy_scope,
+    "isolated_deployment_roles": isolated_deployment_roles,
+    "hardened_state_backend": hardened_state_backend,
+    "state_locking": state_locking,
+    "workflow_oidc_permissions": workflow_oidc_permissions,
+    "workflow_account_separation": workflow_account_separation,
+    "workflow_production_gate": workflow_production_gate,
+    "workflow_immutable_release": workflow_immutable_release,
+    "workflow_rollback_validation": workflow_rollback_validation,
 }
 
 
@@ -197,4 +535,3 @@ def load_manifests(path: Path | None) -> list[dict[str, Any]]:
     for file in files:
         documents.extend(doc for doc in yaml.safe_load_all(file.read_text()) if doc)
     return documents
-

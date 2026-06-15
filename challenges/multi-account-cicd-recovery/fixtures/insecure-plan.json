@@ -1,0 +1,39 @@
+{
+  "format_version": "1.2",
+  "planned_values": {
+    "root_module": {
+      "resources": [
+        {
+          "type": "aws_s3_bucket",
+          "values": {
+            "bucket": "payments-terraform-state",
+            "tags": {"Purpose": "terraform-state"}
+          }
+        },
+        {
+          "type": "aws_iam_access_key",
+          "values": {"user": "github-actions"}
+        },
+        {
+          "type": "aws_iam_role",
+          "values": {
+            "name": "shared-admin-deploy",
+            "max_session_duration": 43200,
+            "permissions_boundary": null,
+            "tags": {"Purpose": "deployment", "Account": "production"},
+            "assume_role_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"sts:AssumeRole\",\"Principal\":{\"AWS\":\"arn:aws:iam::111122223333:user/github-actions\"}}]}"
+          }
+        },
+        {
+          "type": "aws_iam_policy",
+          "values": {
+            "name": "shared-admin-deploy",
+            "tags": {"Purpose": "deployment"},
+            "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"*\",\"Resource\":\"*\"}]}"
+          }
+        }
+      ]
+    }
+  }
+}
+
