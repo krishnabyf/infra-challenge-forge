@@ -2,8 +2,27 @@
 
 [![CI](https://github.com/krishnabyf/infra-challenge-forge/actions/workflows/ci.yml/badge.svg)](https://github.com/krishnabyf/infra-challenge-forge/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/krishnabyf/infra-challenge-forge)](https://github.com/krishnabyf/infra-challenge-forge/releases/latest)
+[![Container](https://ghcr-badge.egpl.dev/krishnabyf/infra-challenge-forge/latest_tag?trim=major&label=container)](https://github.com/krishnabyf/infra-challenge-forge/pkgs/container/infra-challenge-forge)
 
 Current release: **v0.2.0**
+
+## Run the published container
+
+No Python installation or repository clone is required:
+
+```bash
+docker pull ghcr.io/krishnabyf/infra-challenge-forge:0.2.0
+docker run --rm ghcr.io/krishnabyf/infra-challenge-forge:0.2.0 --version
+```
+
+Available release tags:
+
+- `0.2.0` - exact immutable release
+- `0.2` - latest compatible `0.2.x` release
+- `latest` - newest stable release
+
+Published images include Linux AMD64 and ARM64 manifests, an SBOM, OCI source
+labels, and GitHub build provenance.
 
 Infrastructure Challenge Forge is an executable evaluation system for senior
 DevOps, SRE, platform engineering, and AI infrastructure reasoning tasks. It
