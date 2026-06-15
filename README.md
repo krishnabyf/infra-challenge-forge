@@ -1,6 +1,9 @@
 # Infrastructure Challenge Forge
 
 [![CI](https://github.com/krishnabyf/infra-challenge-forge/actions/workflows/ci.yml/badge.svg)](https://github.com/krishnabyf/infra-challenge-forge/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/krishnabyf/infra-challenge-forge)](https://github.com/krishnabyf/infra-challenge-forge/releases/latest)
+
+Current release: **v0.2.0**
 
 Infrastructure Challenge Forge is an executable evaluation system for senior
 DevOps, SRE, platform engineering, and AI infrastructure reasoning tasks. It

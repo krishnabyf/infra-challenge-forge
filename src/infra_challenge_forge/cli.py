@@ -4,12 +4,14 @@ import argparse
 import json
 from pathlib import Path
 
+from . import __version__
 from .engine import evaluate
 from .models import load_challenge
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="infra-forge")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
     command = subparsers.add_parser("evaluate", help="score a Terraform plan and manifests")
     command.add_argument("challenge", type=Path)
@@ -37,4 +39,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
