@@ -42,10 +42,14 @@ jobs:
           terraform_version: 1.6.6
       - name: Check Terraform formatting
         run: terraform fmt -check -recursive challenges
-      - name: Parse Kubernetes resources client-side
-        run: |
-          kubectl create --dry-run=client --validate=false \
-            -f challenges/eks-incident-response/reference/kubernetes/workload.yaml
+      - name: Validate Kubernetes schemas
+        uses: docker://ghcr.io/yannh/kubeconform:v0.8.0
+        with:
+          entrypoint: /kubeconform
+          args: >-
+            -strict
+            -summary
+            challenges/eks-incident-response/reference/kubernetes/workload.yaml
 
   container:
     runs-on: ubuntu-latest
