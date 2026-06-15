@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/krishnabyf/infra-challenge-forge/actions/workflows/ci.yml/badge.svg)](https://github.com/krishnabyf/infra-challenge-forge/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/krishnabyf/infra-challenge-forge)](https://github.com/krishnabyf/infra-challenge-forge/releases/latest)
-[![Container](https://ghcr-badge.egpl.dev/krishnabyf/infra-challenge-forge/latest_tag?trim=major&label=container)](https://github.com/krishnabyf/infra-challenge-forge/pkgs/container/infra-challenge-forge)
+[![Container](https://img.shields.io/badge/GHCR-0.2.0-2496ED?logo=docker&logoColor=white)](https://github.com/krishnabyf/infra-challenge-forge/pkgs/container/infra-challenge-forge)
 
 Current release: **v0.2.0**
 
